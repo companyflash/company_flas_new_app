@@ -1,137 +1,156 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSession, useSupabaseClient } from '@supabase/auth-helpers-react'
-import { useRouter, usePathname } from 'next/navigation'
+import { useSupabaseClient, useSession } from '@supabase/auth-helpers-react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { ShieldAlert, FileText, Users, LockOpen } from 'lucide-react'
+import { FaGoogle } from 'react-icons/fa'
 
-export default function Home() {
+export default function LandingPage() {
   const supabase = useSupabaseClient()
   const session  = useSession()
   const router   = useRouter()
-  const path     = usePathname()
 
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [mode, setMode]         = useState<'sign-in' | 'sign-up'>('sign-in')
-  const [error, setError]       = useState<string | null>(null)
+  const [error, setError]       = useState<string|null>(null)
   const [loading, setLoading]   = useState(false)
 
-  // If we detect a session on "/", send to /dashboard once
+  // Redirect if already signed in
   useEffect(() => {
-    if (session && path === '/') {
+    if (session) {
       router.replace('/dashboard')
     }
-  }, [session, path, router])
+  }, [session, router])
 
-  const handleEmailAuth = async () => {
+  // Do not render until session status is known
+  if (session === undefined) {
+    return null
+  }
+
+  // If signed in, don't render the form (effect will redirect)
+  if (session) {
+    return null
+  }
+
+  const handleSignIn = async () => {
     setError(null)
     setLoading(true)
-    try {
-      if (mode === 'sign-up') {
-        const { error: signErr } = await supabase.auth.signUp({ email, password })
-        if (signErr) throw signErr
-        await fetch('/api/onboard', { method: 'POST' })
-        setError('Check your email for a confirmation link—your business has been created.')
-      } else {
-        const { error: signErr } = await supabase.auth.signInWithPassword({ email, password })
-        if (signErr) throw signErr
-      }
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setLoading(false)
-    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    setLoading(false)
+    if (error) setError(error.message)
+    else router.push('/dashboard')
   }
 
-  const handleOAuth = async () => {
-    setError(null)
-    // Ask Supabase for the OAuth URL
-    const { data, error: oauthErr } = await supabase.auth.signInWithOAuth({
+  const handleGoogleSignIn = async () => {
+    await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin }
+      options: { redirectTo: window.location.origin + '/dashboard' },
     })
-    if (oauthErr) {
-      setError(oauthErr.message)
-      return
-    }
-    if (data?.url) {
-      // actually redirect the browser
-      window.location.href = data.url
-    } else {
-      setError('Could not get OAuth redirect URL.')
-    }
   }
-
-  // Don’t flash the login form if already signed in
-  if (session) return null
 
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen space-y-8 px-4">
-      <h1 className="text-4xl font-extrabold">CompanyFlash</h1>
-      <p className="max-w-md text-center">
-        An end-to-end fraud-prevention and risk-intelligence platform that scores suppliers,
-        surfaces results in your workflow, and gives finance teams audit-ready history.
-      </p>
-
-      <div className="space-x-2">
-        <button
-          onClick={() => setMode('sign-in')}
-          className={`px-4 py-2 rounded ${mode === 'sign-in' ? 'bg-blue-600 text-white' : 'border'}`}
+    <>
+      {/* Header */}
+      <header className="flex justify-end p-4 bg-white shadow">
+        <span className="mr-4 text-gray-700">Don&apos;t have an account?</span>
+        <Link
+          href="/signup"
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
         >
-          Sign In
-        </button>
-        <button
-          onClick={() => setMode('sign-up')}
-          className={`px-4 py-2 rounded ${mode === 'sign-up' ? 'bg-blue-600 text-white' : 'border'}`}
-        >
-          Sign Up
-        </button>
-      </div>
+          Get Started
+        </Link>
+      </header>
 
-      <div className="flex flex-col space-y-2 w-full max-w-sm">
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          className="px-3 py-2 border rounded"
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          className="px-3 py-2 border rounded"
-        />
-        <button
-          onClick={handleEmailAuth}
-          disabled={loading}
-          className="mt-2 px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50"
-        >
-          {loading
-            ? mode === 'sign-up'
-              ? 'Creating…'
-              : 'Signing In…'
-            : mode === 'sign-up'
-            ? 'Create Account'
-            : 'Sign In'}
-        </button>
-      </div>
+      {/* Hero Section */}
+      <main className="bg-gray-50">
+        <section className="text-center py-16">
+          <h1 className="text-4xl font-extrabold mb-4">End-to-end Fraud Prevention</h1>
+          <p className="text-lg text-gray-600 max-w-2xl mx-auto mb-8">
+            Score suppliers, surface results in your workflow, and give finance teams
+            audit-ready history.
+          </p>
+        </section>
 
-      {error && <p className="text-red-500">{error}</p>}
+        {/* Sign-In Box */}
+        <section className="flex justify-center mb-16 px-4">
+          <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full space-y-6">
+            <h2 className="flex items-center justify-center text-3xl font-bold">
+              <LockOpen className="w-8 h-8 text-blue-600 mr-2" />
+              Sign In
+            </h2>
 
-      <div className="flex items-center w-full max-w-sm">
-        <hr className="flex-grow" />
-        <span className="px-2 text-gray-500">OR</span>
-        <hr className="flex-grow" />
-      </div>
+            {error && <p className="text-red-500 text-center">{error}</p>}
 
-      <button
-        onClick={handleOAuth}
-        className="px-4 py-2 bg-blue-600 text-white rounded"
-      >
-        Sign in with Google
-      </button>
-    </main>
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+
+            <button
+              onClick={handleSignIn}
+              disabled={loading}
+              className="w-full flex justify-center items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              {loading ? 'Signing in…' : 'Sign In'}
+            </button>
+
+            <div className="flex items-center justify-center space-x-2 text-gray-500">or</div>
+
+            <button
+              onClick={handleGoogleSignIn}
+              className="w-full flex justify-center items-center px-4 py-2 border border-gray-300 rounded hover:bg-gray-100"
+            >
+              <FaGoogle className="w-5 h-5 mr-2 text-red-600" />
+              Sign in with Google
+            </button>
+          </div>
+        </section>
+
+        {/* Features Section */}
+        <section className="max-w-7xl mx-auto py-16 px-4 grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="bg-white p-6 rounded-lg shadow text-center">
+            <ShieldAlert className="mx-auto mb-4 w-12 h-12 text-blue-600" />
+            <h3 className="text-xl font-semibold mb-2">Risk Intelligence</h3>
+            <p className="text-gray-600">
+              Get real-time risk scores and audit-ready history for every supplier.
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-lg shadow text-center">
+            <FileText className="mx-auto mb-4 w-12 h-12 text-green-600" />
+            <h3 className="text-xl font-semibold mb-2">Seamless Reports</h3>
+            <p className="text-gray-600">
+              Generate and share fraud-prevention reports in seconds.
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-lg shadow text-center">
+            <Users className="mx-auto mb-4 w-12 h-12 text-purple-600" />
+            <h3 className="text-xl font-semibold mb-2">Team Collaboration</h3>
+            <p className="text-gray-600">
+              Invite your team, assign roles, and streamline workflows.
+            </p>
+          </div>
+        </section>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-gray-800 text-white py-6">
+        <div className="max-w-7xl mx-auto px-4 text-center text-sm">
+          © {new Date().getFullYear()} CompanyFlash. All rights reserved.
+        </div>
+      </footer>
+    </>
   )
 }
