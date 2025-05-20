@@ -1,69 +1,58 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState } from 'react';
 
 export function InviteUsers() {
-  const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState<'admin'|'member'>('member')
-  const [status, setStatus] = useState<'idle'|'sending'|'sent'|'error'>('idle')
-  const [errorMsg, setErrorMsg] = useState<string|null>(null)
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'sending' | 'sent' | 'error' | null>(null);
+  const [sentAt, setSentAt] = useState<string | null>(null);
 
-  const sendInvite = async () => {
-    setStatus('sending')
-    setErrorMsg(null)
+  const handleSend = async () => {
+    setStatus('sending');
+    try {
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', 
+        body: JSON.stringify({ email }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || res.statusText);
 
-    const res = await fetch('/api/invite', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, role })
-    })
-    const { error } = await res.json()
-
-    if (error) {
-      setErrorMsg(error)
-      setStatus('error')
-    } else {
-      setStatus('sent')
-      setEmail('')
+      setSentAt(new Date(body.sent_at).toLocaleString());
+      setStatus('sent');
+    } catch (err) {
+      console.error(err);
+      setStatus('error');
     }
-  }
+  };
 
   return (
-    <div className="p-4 border rounded shadow-sm max-w-md">
-      <h2 className="text-lg font-semibold mb-2">Invite a Teammate</h2>
-      <div className="flex flex-col space-y-2">
-        <input
-          type="email"
-          placeholder="Teammate’s email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          className="border p-2 rounded"
-        />
-        <select
-          value={role}
-          onChange={e => setRole(e.target.value as any)}
-          className="border p-2 rounded"
-        >
-          <option value="admin">Admin</option>
-          <option value="member">Member</option>
-        </select>
-        <button
-          onClick={sendInvite}
-          disabled={!email || status==='sending'}
-          className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
-        >
-          {status === 'sending'
-            ? 'Sending…'
-            : status === 'sent'
-            ? 'Invite Sent!'
-            : 'Send Invite'}
-        </button>
-        {status === 'error' && (
-          <p className="text-red-500 text-sm">Error: {errorMsg}</p>
-        )}
-      </div>
+    <div className="space-y-4">
+      {status === 'sent' ? (
+        <p className="text-green-600">Invite sent at {sentAt}</p>
+      ) : (
+        <>
+          <div>
+            <label className="block mb-1">Teammate Email</label>
+            <input
+              type="email"
+              className="border rounded px-3 py-2 w-full"
+              placeholder="user@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+            />
+          </div>
+          <button
+            onClick={handleSend}
+            disabled={status === 'sending' || !email}
+            className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+          >
+            {status === 'sending' ? 'Sending…' : 'Send Invite'}
+          </button>
+          {status === 'error' && <p className="text-red-500">Failed to send invite</p>}
+        </>
+      )}
     </div>
-  )
+  );
 }
