@@ -1,51 +1,50 @@
-// lib/inviteService.js
+// app/lib/inviteService.js
 import { supabase } from './supabaseClient';
 import { sendInviteEmail } from './mailer';
 
-/**
- * Ensures a single invite per user and per email.
- * @param {string} userId
- * @param {string} email
- * @returns {{id: string, sent_at: string}}
- */
-export async function sendInvite(userId, email) {
-  // 1) Check if this exact invite already exists
+export async function sendInvite(userId, email, role = 'member') {
+  // 1) Avoid duplicate
   const { data: existing, error: selErr } = await supabase
     .from('invites')
     .select('id, sent_at')
     .eq('user_id', userId)
     .eq('email', email)
     .single();
-
   if (selErr && selErr.code !== 'PGRST116') throw selErr;
-  if (existing) {
-    return existing;
-  }
+  if (existing) return existing;
 
-  // 2) Insert new invite and return id + sent_at
+  // 2) Find inviter's business_id
+  const { data: bmData, error: bmErr, status: bmStatus } = await supabase
+    .from('business_members')
+    .select('business_id')
+    .eq('user_id', userId)
+    .single();
+  if (bmErr && bmStatus === 406) {
+    throw new Error('You must belong to a business before sending invites.');
+  } else if (bmErr) {
+    throw bmErr;
+  }
+  const business_id = bmData.business_id;
+
+  // 3) Insert invite with role
   const { data, error: insErr } = await supabase
     .from('invites')
-    .insert([{ user_id: userId, email, sent_at: new Date().toISOString() }])
+    .insert([{
+      user_id,
+      email,
+      sent_at:     new Date().toISOString(),
+      business_id,
+      role,               // ← store the chosen role
+    }])
     .select('id, sent_at')
     .single();
   if (insErr) throw insErr;
 
-  // 3) Send the email
-  console.log('🛎  Sending invite to:', email);
-
-  // build base URL from NEXTAUTH_URL or APP_URL
-  const baseUrl = process.env.NEXTAUTH_URL || process.env.APP_URL;
-  if (!baseUrl) {
-    throw new Error('Missing NEXTAUTH_URL or APP_URL environment variable');
-  }
-
-  const inviteLink = `${baseUrl.replace(/\/$/, '')}/accept-invite?token=${data.id}`;
-
-  await sendInviteEmail(
-    email,
-    inviteLink,
-    { userId, inviteId: data.id }
-  );
+  // 4) Send email
+  const baseUrl = (process.env.NEXTAUTH_URL || process.env.APP_URL).replace(/\/$/, '');
+  const inviteLink = `${baseUrl}/accept-invite?token=${data.id}`;
+  console.log('🛎  Sending invite to:', email, inviteLink);
+  await sendInviteEmail(email, inviteLink, { userId, inviteId: data.id });
 
   return data;
 }

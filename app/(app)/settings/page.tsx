@@ -13,223 +13,178 @@ import {
 import { InviteUsers } from '../components/InviteUsers';
 
 export default function SettingsPage() {
-  const sessionObj   = useSession();
-  const supabase     = useSupabaseClient();
-  const router       = useRouter();
+  const sessionObj = useSession();
+  const supabase = useSupabaseClient();
+  const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Which tab is active
-  const [tab, setTab] = useState<'invitations' | 'account'>(
-    searchParams.get('tab') === 'account' ? 'account' : 'invitations'
-  );
+  const initialTab = ['invitations', 'account', 'company'].includes(searchParams.get('tab')!)
+    ? (searchParams.get('tab')! as 'invitations' | 'account' | 'company')
+    : 'invitations';
+  const [tab, setTab] = useState(initialTab);
 
-  // undefined until we inspect the session identities & metadata
-  const [needsPasswordSetup, setNeedsPasswordSetup] =
-    useState<boolean | undefined>(undefined);
+  const [needsPasswordSetup, setNeedsPasswordSetup] = useState<boolean | undefined>(undefined);
 
-  // Password form state
-  const [newPw, setNewPw]         = useState('');
+  // Password state
+  const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
-  const [error, setError]         = useState<string | null>(null);
-  const [success, setSuccess]     = useState<string | null>(null);
-  const [loading, setLoading]     = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState<string | null>(null);
+  const [pwLoading, setPwLoading] = useState(false);
 
-  // Team invites list
+  // Team
   const [team, setTeam] = useState<{ email: string; sent_at: string }[]>([]);
 
-  // 1) Only redirect to "/" when session is known to be null,
-  //    and *not* when landing on the OAuth callback tab.
+  // Company
+  const [company, setCompany] = useState<{ id: string; name: string; industry: string; size: string } | null>(null);
+  const [companyLoading, setCompanyLoading] = useState(false);
+  const [companyError, setCompanyError] = useState<string | null>(null);
+  const [isEditingCompany, setIsEditingCompany] = useState(false);
+  const [editFields, setEditFields] = useState({ name: '', industry: '', size: '' });
+
+  // Redirect logic
   useEffect(() => {
-    if (sessionObj === undefined) return;  // still loading
+    if (sessionObj === undefined) return;
     const isAccountTab = searchParams.get('tab') === 'account';
-    if (sessionObj === null && !isAccountTab) {
-      router.replace('/');
-    }
+    if (sessionObj === null && !isAccountTab) router.replace('/');
   }, [sessionObj, searchParams, router]);
 
-  // 2) Once we have a session, check whether they need to set a password:
-  //    either they signed up via Google and haven't set one, or they have no email identity.
+  // Check password setup
   useEffect(() => {
-    if (sessionObj === undefined || sessionObj === null) return;
-
+    if (!sessionObj) return;
     const { identities = [], user_metadata = {} } = sessionObj.user;
-    const hasEmail    = identities.some(i => i.provider === 'email');
-    const passwordSet = user_metadata.passwordSet === true;
-
+    const hasEmail = identities.some(i => i.provider === 'email');
+    const passwordSet = user_metadata.passwordSet;
     const needs = !(hasEmail || passwordSet);
     setNeedsPasswordSetup(needs);
-
-    if (needs) {
-      // force the account tab for those who still need a password
-      setTab('account');
-    }
+    if (needs) setTab('account');
   }, [sessionObj]);
 
-  // 3) Once we know needsPasswordSetup, bounce non-OAuth users off "account" tab
+  // Redirect account
   useEffect(() => {
-    if (needsPasswordSetup === undefined) return;
-    if (!needsPasswordSetup && searchParams.get('tab') === 'account') {
-      router.replace('/dashboard');
-    }
-  }, [needsPasswordSetup, searchParams, router]);
+    if (needsPasswordSetup === false && tab === 'account') router.replace('/dashboard');
+  }, [needsPasswordSetup, tab, router]);
 
-  // 4) Load team invites when viewing the invitations tab
+  // Load team
   useEffect(() => {
     if (tab !== 'invitations') return;
     supabase
       .from('invites')
       .select('email, sent_at')
       .eq('accepted', true)
-      .then(({ data, error }) => {
-        if (!error && data) setTeam(data);
-      });
+      .then(({ data }) => data && setTeam(data));
   }, [tab, supabase]);
 
-  // Handle setting or changing the password, and tag the user metadata
-  const handleSet = async () => {
-    setError(null);
-    setSuccess(null);
+  // Load company
+  useEffect(() => {
+    if (tab !== 'company') return;
+    setCompanyLoading(true);
+    supabase
+      .from('businesses')
+      .select('id,name,industry,size')
+      .single()
+      .then(({ data, error }) => {
+        if (error) setCompanyError(error.message);
+        else if (data) {
+          setCompany(data);
+          setEditFields({ name: data.name, industry: data.industry, size: data.size });
+        }
+      })
+      .finally(() => setCompanyLoading(false));
+  }, [tab, supabase]);
 
-    if (newPw.length < 6) {
-      setError('Password must be at least 6 characters.');
-      return;
-    }
-    if (newPw !== confirmPw) {
-      setError('Passwords do not match.');
-      return;
-    }
-
-    setLoading(true);
-    const { error: pwErr } = await supabase.auth.updateUser({
-      password: newPw,
-      data: { passwordSet: true },    // ← record that they’ve now set a password
-    });
-    setLoading(false);
-
-    if (pwErr) {
-      setError(pwErr.message);
-    } else {
-      setSuccess('Password updated successfully.');
-      setNewPw('');
-      setConfirmPw('');
-      // now they no longer need a password
+  const handleSetPassword = async () => {
+    setPwError(null);
+    setPwSuccess(null);
+    if (newPw.length < 6) return setPwError('At least 6 characters.');
+    if (newPw !== confirmPw) return setPwError('Passwords do not match.');
+    setPwLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPw, data: { passwordSet: true } });
+    setPwLoading(false);
+    if (error) setPwError(error.message);
+    else {
+      setPwSuccess('Password updated.');
       setNeedsPasswordSetup(false);
       router.replace('/dashboard');
     }
   };
 
-  // Wait until session and needsPasswordSetup are resolved
-  if (
-    sessionObj === undefined ||
-    needsPasswordSetup === undefined
-  ) {
-    return null;
-  }
+  const handleSaveCompany = async () => {
+    if (!company) return;
+    setCompanyError(null);
+    setCompanyLoading(true);
+    const { name, industry, size } = editFields;
+    const { error } = await supabase
+      .from('businesses')
+      .update({ name, industry, size })
+      .eq('id', company.id);
+    setCompanyLoading(false);
+    if (error) setCompanyError(error.message);
+    else {
+      setCompany({ ...company, name, industry, size });
+      setIsEditingCompany(false);
+    }
+  };
+
+  if (sessionObj === undefined || needsPasswordSetup === undefined) return null;
 
   return (
     <main className="max-w-3xl mx-auto p-8">
       <h1 className="text-2xl font-bold mb-6">Settings</h1>
-
-      {needsPasswordSetup && (
-        <div className="mb-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800">
-          You signed up via Google. Please set a password below so you can also
-          log in with email/password.
-        </div>
-      )}
-
       <nav className="flex space-x-4 border-b mb-6">
-        <button
-          onClick={() => setTab('invitations')}
-          className={`pb-2 ${
-            tab === 'invitations'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-800'
-          }`}
-        >
-          Team Invitations
-        </button>
-        <button
-          onClick={() => setTab('account')}
-          className={`pb-2 ${
-            tab === 'account'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-800'
-          }`}
-        >
-          Account Management
-        </button>
+        <button onClick={() => setTab('invitations')} className={tab==='invitations'? 'pb-2 border-b-2 border-blue-600 text-blue-600':'pb-2 text-gray-600 hover:text-gray-800'}>Team Invitations</button>
+        <button onClick={() => setTab('account')} className={tab==='account'? 'pb-2 border-b-2 border-blue-600 text-blue-600':'pb-2 text-gray-600 hover:text-gray-800'}>Account Management</button>
+        <button onClick={() => setTab('company')} className={tab==='company'? 'pb-2 border-b-2 border-blue-600 text-blue-600':'pb-2 text-gray-600 hover:text-gray-800'}>Company Info</button>
       </nav>
 
-      {tab === 'invitations' && (
-        <section>
-          <h2 className="text-xl font-semibold mb-4">Invite Teammates</h2>
-          <InviteUsers />
+      {tab==='invitations' && <InviteUsers confirmBeforeSend />}
+
+      {tab==='account' && (
+        <section className="space-y-6">
+          {needsPasswordSetup && <div className="p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800">Set a password to enable email login.</div>}
+          <div className="bg-white shadow rounded-lg p-6 max-w-md space-y-4">
+            <h2 className="text-xl font-semibold">{needsPasswordSetup? 'Set Password':'Change Password'}</h2>
+            <input type="password" placeholder="New Password" value={newPw} onChange={e=>setNewPw(e.target.value)} className="w-full border rounded px-3 py-2" />
+            <input type="password" placeholder="Confirm Password" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)} className="w-full border rounded px-3 py-2" />
+            <button onClick={handleSetPassword} disabled={pwLoading} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50">{pwLoading? 'Saving...':'Save Password'}</button>
+            {pwError && <p className="text-red-500">{pwError}</p>}
+            {pwSuccess && <p className="text-green-600">{pwSuccess}</p>}
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold">Team Members</h2>
+            {team.length? (
+              <ul className="list-disc pl-5">{team.map(m=><li key={m.email}>{m.email} joined {new Date(m.sent_at).toLocaleDateString()}</li>)}</ul>
+            ):(<p>No members.</p>)}
+          </div>
         </section>
       )}
 
-      {tab === 'account' && (
+      {tab==='company' && (
         <section className="space-y-6">
-          <div>
-            <h2 className="text-xl font-semibold mb-2">
-              {needsPasswordSetup ? 'Set Your Password' : 'Change Password'}
-            </h2>
-            <div className="bg-white shadow rounded-lg p-6 max-w-md">
-              <label className="block mb-3">
-                <span className="text-gray-700">
-                  New Password{!needsPasswordSetup && ' *'}
-                </span>
-                <input
-                  type="password"
-                  placeholder="••••••••"
-                  value={newPw}
-                  onChange={e => setNewPw(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                />
-              </label>
-              <label className="block mb-4">
-                <span className="text-gray-700">
-                  Confirm Password{!needsPasswordSetup && ' *'}
-                </span>
-                <input
-                  type="password"
-                  placeholder="••••••••"
-                  value={confirmPw}
-                  onChange={e => setConfirmPw(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                />
-              </label>
-              <button
-                onClick={handleSet}
-                disabled={loading}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading
-                  ? needsPasswordSetup
-                    ? 'Setting…'
-                    : 'Updating…'
-                  : needsPasswordSetup
-                  ? 'Set Password'
-                  : 'Change Password'}
-              </button>
-              {error   && <p className="text-red-500 mt-2">{error}</p>}
-              {success && <p className="text-green-600 mt-2">{success}</p>}
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Company Info</h2>
+            <button onClick={()=>setIsEditingCompany(!isEditingCompany)} className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">
+              {isEditingCompany? 'Cancel':'Edit'}
+            </button>
+          </div>
+          {companyLoading? <p>Loading...</p> : companyError? <p className="text-red-500">{companyError}</p> : company && (
+            <div className="bg-white shadow rounded-lg p-6 max-w-md space-y-4">
+              {isEditingCompany? (
+                <>
+                  <label className="block"><span className="text-gray-700">Name</span><input type="text" value={editFields.name} onChange={e=>setEditFields({...editFields,name:e.target.value})} className="w-full border rounded px-3 py-2" /></label>
+                  <label className="block"><span className="text-gray-700">Industry</span><input type="text" value={editFields.industry} onChange={e=>setEditFields({...editFields,industry:e.target.value})} className="w-full border rounded px-3 py-2" /></label>
+                  <label className="block"><span className="text-gray-700">Size</span><input type="text" value={editFields.size} onChange={e=>setEditFields({...editFields,size:e.target.value})} className="w-full border rounded px-3 py-2" /></label>
+                  <button onClick={handleSaveCompany} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Confirm</button>
+                </>
+              ) : (
+                <>
+                  <p><strong>Name:</strong> {company.name}</p>
+                  <p><strong>Industry:</strong> {company.industry}</p>
+                  <p><strong>Size:</strong> {company.size}</p>
+                </>
+              )}
             </div>
-          </div>
-
-          <div>
-            <h2 className="text-xl font-semibold mt-8 mb-2">Team Members</h2>
-            {team.length > 0 ? (
-              <ul className="list-disc pl-5">
-                {team.map(m => (
-                  <li key={m.email}>
-                    {m.email} — joined on {new Date(m.sent_at).toLocaleDateString()}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>No active members yet.</p>
-            )}
-          </div>
+          )}
         </section>
       )}
     </main>
