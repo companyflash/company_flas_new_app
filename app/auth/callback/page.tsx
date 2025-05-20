@@ -34,7 +34,7 @@ export default function OAuthCallbackPage() {
       router.replace('/dashboard');
     } else {
       // Need to set a password → settings tab=account
-      router.replace('/settings?tab=account');
+      router.replace('/onboarding/company');
     }
   }, [session, router]);
 
