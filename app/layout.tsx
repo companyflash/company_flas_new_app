@@ -1,14 +1,13 @@
-//app/layout.tsx
+'use client';
+import '../globals.css';
 
-'use client'
-import '../globals.css'
-
-import { SessionContextProvider } from '@supabase/auth-helpers-react'
-import { createPagesBrowserClient } from '@supabase/auth-helpers-nextjs'
-import { useState, type ReactNode } from 'react'
+import { SessionContextProvider } from '@supabase/auth-helpers-react';
+import { createPagesBrowserClient } from '@supabase/auth-helpers-nextjs';
+import { useState, type ReactNode } from 'react';
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  const [supabaseClient] = useState(() => createPagesBrowserClient())
+  const [supabaseClient] = useState(() => createPagesBrowserClient());
+
   return (
     <html lang="en">
       <body>
@@ -17,5 +16,5 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </SessionContextProvider>
       </body>
     </html>
-  )
+  );
 }
