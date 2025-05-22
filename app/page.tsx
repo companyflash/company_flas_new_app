@@ -1,4 +1,3 @@
-// app/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -31,8 +30,7 @@ export default function LandingPage() {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // After OAuth, Google will redirect you here:
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
       },
     });
   };

@@ -1,5 +1,3 @@
-//app/signup/SignupForm.tsx
-
 'use client';
 
 import { useState } from 'react';
@@ -36,8 +34,7 @@ export default function GenericSignupForm() {
     supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // Pass them to the client-side callback page
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
       },
     });
   };
