@@ -1,108 +1,135 @@
-// app/accept-invite/page.tsx
 'use client';
+export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, FormEvent } from 'react';
-import { useRouter, useSearchParams }     from 'next/navigation';
-import { useSupabaseClient }              from '@supabase/auth-helpers-react';
+import { useRouter } from 'next/navigation';
+import { useSupabaseClient } from '@supabase/auth-helpers-react';
 
 export default function AcceptInvitePage() {
-  const params   = useSearchParams();
-  const router   = useRouter();
+  const router = useRouter();
   const supabase = useSupabaseClient();
-  const token    = params.get('token')!;
 
-  const [invite, setInvite]   = useState<{
+  // parse the token from the URL manually
+  const [token, setToken] = useState<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setToken(params.get('token'));
+  }, []);
+
+  const [invite, setInvite] = useState<{
     inviteeEmail: string;
     inviterEmail: string;
     businessName: string;
-    role:          string;
+    role: string;
   } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-  const [sending, setSending]     = useState(false);
-  const [email, setEmail]         = useState('');
-
-  // load invite metadata
+  // fetch invite metadata once we have the token
   useEffect(() => {
+    if (!token) return;
     fetch(`/api/invite/${token}`)
       .then(r => r.json())
       .then(body => {
         if (body.error) throw new Error(body.error);
         setInvite(body);
-        setEmail((body as any).inviteeEmail);
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, [token]);
 
-  const handleSendLink = async (e: FormEvent) => {
+  const handleClaim = async (e: FormEvent) => {
     e.preventDefault();
-    if (!invite) return;
-    setError(null);
-    setSending(true);
+    if (!invite || !token) return;
 
-    const { error: supErr } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        // after they click the magic link, redirect them into your verify-email step
-        emailRedirectTo: `${window.location.origin}/settings?tab=account&inviteToken=${encodeURIComponent(token)}`,
-      },
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirm) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setError(null);
+    setSubmitting(true);
+
+    const { error: signErr } = await supabase.auth.signUp({
+      email: invite.inviteeEmail,
+      password,
+      options: { data: { invited: token } },
     });
 
-    setSending(false);
-    if (supErr) setError(supErr.message);
-    else {
-      // show a simple "check your inbox" confirmation
-      router.replace('/accept-invite?token=' + token + '&sent=1');
+    if (signErr) {
+      setError(signErr.message);
+      setSubmitting(false);
+      return;
     }
+
+    const res = await fetch(`/api/invite/${token}/accept`, { method: 'POST' });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(body.error || 'Failed to accept invitation.');
+      setSubmitting(false);
+      return;
+    }
+
+    router.replace('/dashboard');
   };
 
   if (loading) return <p className="p-8 text-center">Loading invite…</p>;
-  if (error)   return <p className="p-8 text-center text-red-500">{error}</p>;
+  if (error) return <p className="p-8 text-center text-red-500">{error}</p>;
   if (!invite) return null;
 
   return (
     <main className="max-w-md mx-auto p-8 space-y-6">
       <h1 className="text-2xl font-bold">You’ve Been Invited!</h1>
-
       <p>
-        You’ve been invited by{' '}
-        <strong>{invite.inviterEmail}</strong> to join{' '}
-        <strong>{invite.businessName}</strong> as a{' '}
+        Invited by <strong>{invite.inviterEmail}</strong> to join{' '}
+        <strong>{invite.businessName}</strong> as{' '}
         <strong>{invite.role}</strong>.
       </p>
-
-      <p className="text-gray-600">
-        We’ll send a one-time login link to{' '}
-        <strong>{invite.inviteeEmail}</strong>.
-      </p>
-
-      <form onSubmit={handleSendLink} className="space-y-4">
-        {error && <p className="text-red-500">{error}</p>}
-
+      <form onSubmit={handleClaim} className="space-y-4">
         <label className="block">
           <span className="text-gray-700">Email</span>
           <input
             type="email"
-            value={email}
+            value={invite.inviteeEmail}
             readOnly
             className="w-full bg-gray-100 border rounded px-3 py-2"
           />
         </label>
-
+        <label className="block">
+          <span className="text-gray-700">Password</span>
+          <input
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </label>
+        <label className="block">
+          <span className="text-gray-700">Confirm Password</span>
+          <input
+            type="password"
+            value={confirm}
+            onChange={e => setConfirm(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+            required
+          />
+        </label>
         <button
           type="submit"
-          disabled={sending}
+          disabled={submitting}
           className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50"
         >
-          {sending ? 'Sending…' : 'Send Sign-Up Link'}
+          {submitting ? 'Creating…' : 'Create Account & Join'}
         </button>
       </form>
-
-      <p className="text-sm text-gray-500">
-        Didn’t receive it? Check your spam folder or ask your colleague to resend.
-      </p>
     </main>
   );
 }

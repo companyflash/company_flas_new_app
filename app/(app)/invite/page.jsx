@@ -1,6 +1,5 @@
-// app/invite/page.jsx
-import InviteButton from './InviteButton';
-import { supabase } from '../../lib/supabaseClient';
+import { InviteButton } from './InviteButton';
+import { supabase } from '@/app/(app)/lib/supabaseClient';
 
 export default async function InvitePage() {
   const {

@@ -1,4 +1,3 @@
-// app/components/InviteUsers.tsx
 'use client';
 
 import { useState } from 'react';
@@ -30,8 +29,9 @@ export function InviteUsers() {
       setSuccess(`Invitation sent to ${email} as ${role}.`);
       setEmail('');
       setRole('member');
-    } catch (e: any) {
-      setError(e.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Invite failed';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -57,7 +57,7 @@ export function InviteUsers() {
         <label className="block text-gray-700 mb-1">Role</label>
         <select
           value={role}
-          onChange={e => setRole(e.target.value as 'admin'|'member')}
+          onChange={e => setRole(e.target.value as 'admin' | 'member')}
           className="w-full border rounded px-3 py-2"
         >
           <option value="admin">Admin</option>

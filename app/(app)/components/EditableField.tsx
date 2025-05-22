@@ -1,4 +1,3 @@
-// app/(app)/components/EditableField.tsx
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -24,23 +23,21 @@ export default function EditableField({
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Keep draft in sync when value changes externally
   useEffect(() => {
     setDraft(value);
   }, [value]);
 
-  // Click outside to cancel edit
   useEffect(() => {
     if (!isEditing) return;
-    const handleClick = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsEditing(false);
         setError(null);
         setDraft(value);
       }
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isEditing, value]);
 
   const handleConfirm = async () => {
@@ -49,8 +46,9 @@ export default function EditableField({
     try {
       await onSave(draft);
       setIsEditing(false);
-    } catch (e: any) {
-      setError(e.message || 'Save failed');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Save failed';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -71,7 +69,7 @@ export default function EditableField({
           <input
             type={inputType}
             value={draft}
-            onChange={e => setDraft(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
             className="flex-grow border rounded px-3 py-2"
             {...inputProps}
           />

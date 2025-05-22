@@ -29,14 +29,18 @@ export default function OnboardingPage() {
   useEffect(() => {
     (async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
         if (error || !session) {
           // Not authenticated
           router.replace('/');
           return;
         }
-        const identities = session.user.identities || [];
-        const hasEmail = identities.some((i: any) => i.provider === 'email');
+        // explicitly type identities to avoid `any`
+        const identities = (session.user.identities ?? []) as { provider: string }[];
+        const hasEmail = identities.some(i => i.provider === 'email');
         const pwSet = session.user.user_metadata?.passwordSet;
         setStep(hasEmail || pwSet ? 'company' : 'password');
       } catch (err) {
@@ -73,12 +77,14 @@ export default function OnboardingPage() {
       return setCmpError('Please fill in all fields.');
     }
     setCmpLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     const res = await fetch('/api/onboarding/company', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token}`,
+        Authorization: `Bearer ${session?.access_token}`,
       },
       body: JSON.stringify({ name, industry, size }),
     });
@@ -151,7 +157,7 @@ export default function OnboardingPage() {
           <div>
             <label className="block mb-1">Company Size</label>
             <div className="flex gap-4">
-              {['1-10','11-50','51-200','201+'].map(s => (
+              {['1-10', '11-50', '51-200', '201+'].map(s => (
                 <label key={s} className="inline-flex items-center">
                   <input
                     type="radio"

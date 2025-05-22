@@ -24,7 +24,7 @@ export async function sendInvite(
     .limit(1)
     .single();
   // ignore “no rows” error
-  if (dupErr && (dupErr as any).code !== 'PGRST116') throw dupErr;
+  if (dupErr && dupErr.code !== 'PGRST116') throw dupErr;
   if (dup) return dup;
 
   // 2) Find inviter's business

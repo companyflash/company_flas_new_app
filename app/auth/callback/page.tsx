@@ -1,17 +1,16 @@
-// app/auth/callback/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession } from '@supabase/auth-helpers-react';
-import { useRouter }  from 'next/navigation';
+import { useSession }           from '@supabase/auth-helpers-react';
+import { useRouter }            from 'next/navigation';
 
 export default function OAuthCallbackPage() {
   const session = useSession();
   const router  = useRouter();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // surface any error from the OAuth redirect
   useEffect(() => {
-    // Did the OAuth flow report an error?
     const err = new URL(window.location.href)
       .searchParams
       .get('error_description');
@@ -21,19 +20,19 @@ export default function OAuthCallbackPage() {
   }, []);
 
   useEffect(() => {
-    // Wait until session is populated
     if (!session) return;
 
-    // Once we have a session, decide where to go:
     const { identities = [], user_metadata = {} } = session.user;
-    const hasEmail   = identities.some(i => i.provider === 'email');
-    const pwSet      = user_metadata.passwordSet === true;
+    const hasEmail = identities.some(i => i.provider === 'email');
+    const pwSet    = user_metadata.passwordSet === true;
+    const invited  = Boolean(user_metadata.invited);
 
-    if (hasEmail || pwSet) {
-      // Already have a password → dashboard
+    if (hasEmail || pwSet || invited) {
+      // anyone with an email‐login identity, a set password, OR who was invited
+      // goes straight to the dashboard
       router.replace('/dashboard');
     } else {
-      // Need to set a password → settings tab=account
+      // fresh OAuth users need to run through company onboarding
       router.replace('/onboarding/company');
     }
   }, [session, router]);

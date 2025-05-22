@@ -1,14 +1,13 @@
+// app/(app)/settings/page.tsx
 'use client';
+export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import {
   useSession,
   useSupabaseClient,
 } from '@supabase/auth-helpers-react';
-import {
-  useRouter,
-  useSearchParams,
-} from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { InviteUsers } from '../components/InviteUsers';
 
 type Tab = 'invitations' | 'account' | 'company';
@@ -24,45 +23,38 @@ export default function SettingsPage() {
   const session      = useSession();
   const supabase     = useSupabaseClient();
   const router       = useRouter();
-  const searchParams = useSearchParams();
 
-  const inviteToken = searchParams.get('inviteToken');
+  // replace useSearchParams:
+  const [inviteToken, setInviteToken] = useState<string|null>(null);
+  const [tab, setTab]                 = useState<Tab>('invitations');
 
-  // initial tab
-  const param = searchParams.get('tab') as Tab;
-  const initialTab: Tab =
-    param === 'invitations' || param === 'account' || param === 'company'
-      ? param
-      : 'invitations';
-  const [tab, setTab] = useState<Tab>(initialTab);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setInviteToken(params.get('inviteToken'));
+    const p = params.get('tab');
+    if (p === 'invitations' || p === 'account' || p === 'company') {
+      setTab(p);
+    }
+  }, []);
 
-  //
   // PASSWORD STATE
-  //
   const [needsPassword, setNeedsPassword] = useState<boolean|undefined>(undefined);
-  const [newPw,         setNewPw]         = useState('');
-  const [confirmPw,     setConfirmPw]     = useState('');
-  const [pwError,       setPwError]       = useState<string|null>(null);
-  const [pwSuccess,     setPwSuccess]     = useState<string|null>(null);
-  const [pwLoading,     setPwLoading]     = useState(false);
+  const [newPw, setNewPw]                 = useState('');
+  const [confirmPw, setConfirmPw]         = useState('');
+  const [pwError, setPwError]             = useState<string|null>(null);
+  const [pwSuccess, setPwSuccess]         = useState<string|null>(null);
+  const [pwLoading, setPwLoading]         = useState(false);
 
-  //
   // COMPANY STATE
-  //
   const [company,        setCompany]        = useState<Company|null>(null);
   const [companyLoading, setCompanyLoading] = useState(false);
   const [companyError,   setCompanyError]   = useState<string|null>(null);
   const [isEditing,      setIsEditing]      = useState(false);
-  // <-- simpler annotation so TS sees the right shape -->
-  const [fields, setFields] = useState<{
-    name: string;
-    industry: string;
-    size: string;
-  }>({ name: '', industry: '', size: '' });
+  const [fields, setFields] = useState<{ name:string; industry:string; size:string }>({
+    name: '', industry: '', size: ''
+  });
 
-  //
   // 0) Auto-accept invite if token & session
-  //
   useEffect(() => {
     if (!inviteToken || !session) return;
     (async () => {
@@ -75,9 +67,7 @@ export default function SettingsPage() {
     })();
   }, [inviteToken, session, router]);
 
-  //
   // 1) Redirect if not logged in (except on Account)
-  //
   useEffect(() => {
     if (session === undefined) return;
     if (session === null && tab !== 'account') {
@@ -85,26 +75,22 @@ export default function SettingsPage() {
     }
   }, [session, tab, router]);
 
-  //
   // 2) Check whether user must set a password
-  //
   useEffect(() => {
     if (!session) return;
     const { identities = [], user_metadata = {} } = session.user;
     const hasEmail = identities.some(i => i.provider === 'email');
-    const pwSet    = user_metadata.passwordSet;
-    const needs    = !(hasEmail || pwSet);
+    const pwSet    = Boolean(user_metadata.passwordSet);
+    const invited  = Boolean(user_metadata.invited);
+    const needs    = !invited && !(hasEmail || pwSet);
     setNeedsPassword(needs);
     if (needs) setTab('account');
   }, [session]);
 
-  //
   // 3) Change password handler
-  //
   const handleSetPassword = async () => {
     setPwError(null);
     setPwSuccess(null);
-
     if (newPw.length < 6) {
       setPwError('At least 6 characters.');
       return;
@@ -113,14 +99,12 @@ export default function SettingsPage() {
       setPwError('Passwords do not match.');
       return;
     }
-
     setPwLoading(true);
     const { error } = await supabase.auth.updateUser({
       password: newPw,
       data:     { passwordSet: true },
     });
     setPwLoading(false);
-
     if (error) {
       setPwError(error.message);
     } else {
@@ -129,15 +113,12 @@ export default function SettingsPage() {
     }
   };
 
-  //
   // 4) Load company info on Company tab
-  //
   useEffect(() => {
     if (tab !== 'company' || !session) return;
     (async () => {
       setCompanyLoading(true);
       try {
-        // fetch their membership
         const { data: membership, error: memErr } = await supabase
           .from('business_members')
           .select('business_id')
@@ -145,7 +126,6 @@ export default function SettingsPage() {
           .single();
         if (memErr || !membership) throw memErr || new Error('No company found');
 
-        // fetch the business
         const { data: biz, error: bizErr } = await supabase
           .from('businesses')
           .select('id,name,industry,size')
@@ -163,9 +143,7 @@ export default function SettingsPage() {
     })();
   }, [tab, session, supabase]);
 
-  //
   // 5) Save edited company info
-  //
   const handleSaveCompany = async () => {
     if (!company) return;
     setCompanyLoading(true);
@@ -186,7 +164,6 @@ export default function SettingsPage() {
     }
   };
 
-  // wait for “needsPassword” to be known
   if (needsPassword === undefined) return null;
 
   return (

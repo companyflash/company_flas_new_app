@@ -1,25 +1,29 @@
-// components/Header.tsx
-'use client'
+'use client';
 
-import { useSession, useSupabaseClient } from '@supabase/auth-helpers-react'
-import { useRouter } from 'next/navigation'
-import Image from 'next/image'
+import { useSession, useSupabaseClient } from '@supabase/auth-helpers-react';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+
+interface UserMetadata {
+  avatar_url?: string;
+}
 
 export function Header() {
-  const supabase = useSupabaseClient()
-  const session = useSession()
-  const router = useRouter()
+  const supabase = useSupabaseClient();
+  const session = useSession();
+  const router = useRouter();
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/')      // <- send them to landing page
-  }
+    await supabase.auth.signOut();
+    router.push('/');
+  };
 
-  if (!session) return null
+  if (!session) return null;
 
-  const { user } = session
-  const avatarUrl = (user.user_metadata as any).avatar_url || '/default-avatar.png'
-  const email = user.email
+  const { user } = session;
+  const metadata = (user.user_metadata ?? {}) as UserMetadata;
+  const avatarUrl = metadata.avatar_url ?? '/default-avatar.png';
+  const email = user.email;
 
   return (
     <header className="flex items-center justify-between p-4 bg-gray-100 shadow-sm">
@@ -40,5 +44,5 @@ export function Header() {
         Sign Out
       </button>
     </header>
-  )
+  );
 }
