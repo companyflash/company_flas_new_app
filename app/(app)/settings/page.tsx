@@ -1,4 +1,3 @@
-// app/(app)/settings/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -14,13 +13,22 @@ import { InviteUsers } from '../components/InviteUsers';
 
 type Tab = 'invitations' | 'account' | 'company';
 
+interface Company {
+  id:       string;
+  name:     string;
+  industry: string;
+  size:     string;
+}
+
 export default function SettingsPage() {
-  const session = useSession();
-  const supabase = useSupabaseClient();
-  const router = useRouter();
+  const session      = useSession();
+  const supabase     = useSupabaseClient();
+  const router       = useRouter();
   const searchParams = useSearchParams();
 
-  // Determine initial tab from URL
+  const inviteToken = searchParams.get('inviteToken');
+
+  // initial tab
   const param = searchParams.get('tab') as Tab;
   const initialTab: Tab =
     param === 'invitations' || param === 'account' || param === 'company'
@@ -31,53 +39,67 @@ export default function SettingsPage() {
   //
   // PASSWORD STATE
   //
-  const [needsPassword, setNeedsPassword] = useState<boolean | undefined>(undefined);
-  const [newPw, setNewPw] = useState('');
-  const [confirmPw, setConfirmPw] = useState('');
-  const [pwError, setPwError] = useState<string | null>(null);
-  const [pwSuccess, setPwSuccess] = useState<string | null>(null);
-  const [pwLoading, setPwLoading] = useState(false);
+  const [needsPassword, setNeedsPassword] = useState<boolean|undefined>(undefined);
+  const [newPw,         setNewPw]         = useState('');
+  const [confirmPw,     setConfirmPw]     = useState('');
+  const [pwError,       setPwError]       = useState<string|null>(null);
+  const [pwSuccess,     setPwSuccess]     = useState<string|null>(null);
+  const [pwLoading,     setPwLoading]     = useState(false);
 
   //
   // COMPANY STATE
   //
-  interface Company { id: string; name: string; industry: string; size: string }
-  const [company, setCompany] = useState<Company | null>(null);
+  const [company,        setCompany]        = useState<Company|null>(null);
   const [companyLoading, setCompanyLoading] = useState(false);
-  const [companyError, setCompanyError] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [fields, setFields] = useState<Omit<Company, 'id'>>({
-    name: '',
-    industry: '',
-    size: '',
-  });
+  const [companyError,   setCompanyError]   = useState<string|null>(null);
+  const [isEditing,      setIsEditing]      = useState(false);
+  // <-- simpler annotation so TS sees the right shape -->
+  const [fields, setFields] = useState<{
+    name: string;
+    industry: string;
+    size: string;
+  }>({ name: '', industry: '', size: '' });
 
   //
-  // 1) Redirect unauthenticated users away (except allow account tab)
+  // 0) Auto-accept invite if token & session
   //
   useEffect(() => {
-    if (session === undefined) return; // still loading
+    if (!inviteToken || !session) return;
+    (async () => {
+      const res = await fetch(`/api/invite/${inviteToken}/accept`, { method: 'POST' });
+      if (res.ok) {
+        router.replace('/settings?tab=account');
+      } else {
+        console.error('Invite acceptance failed:', await res.text());
+      }
+    })();
+  }, [inviteToken, session, router]);
+
+  //
+  // 1) Redirect if not logged in (except on Account)
+  //
+  useEffect(() => {
+    if (session === undefined) return;
     if (session === null && tab !== 'account') {
       router.replace('/');
     }
   }, [session, tab, router]);
 
   //
-  // 2) Check whether the user *needs* to set a password
-  //    (for new OAuth signups). If so, force them into Account.
+  // 2) Check whether user must set a password
   //
   useEffect(() => {
     if (!session) return;
     const { identities = [], user_metadata = {} } = session.user;
     const hasEmail = identities.some(i => i.provider === 'email');
-    const pwSet = user_metadata.passwordSet;
-    const needs = !(hasEmail || pwSet);
+    const pwSet    = user_metadata.passwordSet;
+    const needs    = !(hasEmail || pwSet);
     setNeedsPassword(needs);
     if (needs) setTab('account');
   }, [session]);
 
   //
-  // 3) Handle password change
+  // 3) Change password handler
   //
   const handleSetPassword = async () => {
     setPwError(null);
@@ -95,7 +117,7 @@ export default function SettingsPage() {
     setPwLoading(true);
     const { error } = await supabase.auth.updateUser({
       password: newPw,
-      data: { passwordSet: true },
+      data:     { passwordSet: true },
     });
     setPwLoading(false);
 
@@ -108,39 +130,33 @@ export default function SettingsPage() {
   };
 
   //
-  // 4) Load company info when on Company tab
+  // 4) Load company info on Company tab
   //
   useEffect(() => {
     if (tab !== 'company' || !session) return;
     (async () => {
       setCompanyLoading(true);
       try {
-        // 1) fetch membership
+        // fetch their membership
         const { data: membership, error: memErr } = await supabase
-          .from<{ business_id: string }>('business_members')
+          .from('business_members')
           .select('business_id')
           .eq('user_id', session.user.id)
           .single();
+        if (memErr || !membership) throw memErr || new Error('No company found');
 
-        if (memErr || !membership) {
-          throw memErr || new Error('No company found');
-        }
-
-        // 2) fetch business
+        // fetch the business
         const { data: biz, error: bizErr } = await supabase
-          .from<Company>('businesses')
+          .from('businesses')
           .select('id,name,industry,size')
           .eq('id', membership.business_id)
           .single();
-
-        if (bizErr || !biz) {
-          throw bizErr || new Error('Business not found');
-        }
+        if (bizErr || !biz) throw bizErr || new Error('Business not found');
 
         setCompany(biz);
         setFields({ name: biz.name, industry: biz.industry, size: biz.size });
-      } catch (e: any) {
-        setCompanyError(e.message);
+      } catch (err: unknown) {
+        setCompanyError((err as Error).message);
       } finally {
         setCompanyLoading(false);
       }
@@ -163,14 +179,14 @@ export default function SettingsPage() {
       if (error) throw error;
       setCompany({ id: company.id, name, industry, size });
       setIsEditing(false);
-    } catch (e: any) {
-      setCompanyError(e.message);
+    } catch (err: unknown) {
+      setCompanyError((err as Error).message);
     } finally {
       setCompanyLoading(false);
     }
   };
 
-  // until we know password state, don’t render
+  // wait for “needsPassword” to be known
   if (needsPassword === undefined) return null;
 
   return (
@@ -242,9 +258,9 @@ export default function SettingsPage() {
               disabled={pwLoading}
               className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
             >
-              {pwLoading ? 'Saving...' : 'Save Password'}
+              {pwLoading ? 'Saving…' : 'Save Password'}
             </button>
-            {pwError && <p className="text-red-500">{pwError}</p>}
+            {pwError   && <p className="text-red-500">{pwError}</p>}
             {pwSuccess && <p className="text-green-600">{pwSuccess}</p>}
           </div>
         </section>
@@ -261,66 +277,59 @@ export default function SettingsPage() {
               {isEditing ? 'Cancel' : 'Edit'}
             </button>
           </div>
-          {companyLoading ? (
-            <p>Loading...</p>
-          ) : companyError ? (
-            <p className="text-red-500">{companyError}</p>
-          ) : company ? (
-            // Plain background—no card
-            <div>
-              {isEditing ? (
+
+          {companyLoading
+            ? <p>Loading…</p>
+            : companyError
+              ? <p className="text-red-500">{companyError}</p>
+              : company && (
                 <div className="space-y-4">
-                  <label className="block">
-                    <span className="text-gray-700">Name</span>
-                    <input
-                      type="text"
-                      value={fields.name}
-                      onChange={e => setFields({ ...fields, name: e.target.value })}
-                      className="w-full border rounded px-3 py-2"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-gray-700">Industry</span>
-                    <input
-                      type="text"
-                      value={fields.industry}
-                      onChange={e => setFields({ ...fields, industry: e.target.value })}
-                      className="w-full border rounded px-3 py-2"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-gray-700">Size</span>
-                    <input
-                      type="text"
-                      value={fields.size}
-                      onChange={e => setFields({ ...fields, size: e.target.value })}
-                      className="w-full border rounded px-3 py-2"
-                    />
-                  </label>
-                  <button
-                    onClick={handleSaveCompany}
-                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-                  >
-                    Confirm
-                  </button>
+                  {isEditing ? (
+                    <>
+                      <label className="block">
+                        <span className="text-gray-700">Name</span>
+                        <input
+                          type="text"
+                          value={fields.name}
+                          onChange={e => setFields({ ...fields, name: e.target.value })}
+                          className="w-full border rounded px-3 py-2"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-gray-700">Industry</span>
+                        <input
+                          type="text"
+                          value={fields.industry}
+                          onChange={e => setFields({ ...fields, industry: e.target.value })}
+                          className="w-full border rounded px-3 py-2"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-gray-700">Size</span>
+                        <input
+                          type="text"
+                          value={fields.size}
+                          onChange={e => setFields({ ...fields, size: e.target.value })}
+                          className="w-full border rounded px-3 py-2"
+                        />
+                      </label>
+                      <button
+                        onClick={handleSaveCompany}
+                        className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                      >
+                        Confirm
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p><strong>Name:</strong> {company.name}</p>
+                      <p><strong>Industry:</strong> {company.industry}</p>
+                      <p><strong>Size:</strong> {company.size}</p>
+                    </>
+                  )}
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <p>
-                    <strong>Name:</strong> {company.name}
-                  </p>
-                  <p>
-                    <strong>Industry:</strong> {company.industry}
-                  </p>
-                  <p>
-                    <strong>Size:</strong> {company.size}
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p>No company found.</p>
-          )}
+              )
+          }
         </section>
       )}
     </main>
